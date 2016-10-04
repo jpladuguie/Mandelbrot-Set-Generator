@@ -5,54 +5,55 @@ import pyopencl as cl
 import pygame
 
 platform = cl.get_platforms()[0]
-device = platform.get_devices()[1]
+device = platform.get_devices()[0]
 ctx = cl.Context([device])
+
+
 
 def mandelbrot(xMin, xMax, yMin, yMax, width, height, maxIterations):
     
     r1 = np.linspace(xMin, xMax, width, dtype=np.float64)
     r2 = np.linspace(yMin, yMax, height, dtype=np.float64)
     c = r1 + r2[:,None]*1j
-    
-    
+
     c = np.ravel(c)
-    
-    #print(c)
-    
+
+
     global ctx
     queue = cl.CommandQueue(ctx)
-    output = np.empty(c.shape, dtype=np.uint16)
+    output = np.empty(c.shape, dtype=np.uint32)
     
     prg = cl.Program(ctx, """
         #pragma OPENCL EXTENSION cl_khr_byte_addressable_store : enable
         __kernel void mandelbrot(__global double2 *q,
-        __global ushort *output, ushort const maxiter)
+        __global uint *output, ushort const maxiter)
         {
-            int gid = get_global_id(0);
+            uint gid = get_global_id(0);
             double nreal, real = 0;
             double imag = 0;
             output[gid] = 0;
             
-            for(int curiter = 0; curiter < maxiter; curiter++) {
+            for(uint curiter = 0; curiter < maxiter; curiter++) {
                 nreal = real*real - imag*imag + q[gid].x;
                 imag = 2* real*imag + q[gid].y;
                 real = nreal;
                 if (real*real + imag*imag > 4.0f){
                     
-                    float N = curiter;
-                    float mu = log(N + 1) - log(log(real*real + imag*imag)) / log(2.0);
-                    //float mu = log(N + 1) / log(2.0);
+                    /*double N = curiter;
+                    double mu = N - log(log(sqrt(real*real + imag*imag)) / log(2.0));
                     
-                    ushort colour = 0;
-                    if (mu == maxiter) {
-                        colour = 0;
-                    }
-                    else {
-                        int iter = mu;
-                        colour = iter*100%256;
-                    }
-                    
-                    output[gid] = (colour + (colour*256) + (colour*256*256));
+                    ulong colour = mu;
+
+                    //output[gid] = (colour + (colour*256) + (colour*256*256));
+                    output[gid] = colour;*/
+
+                    float log_zn = log(real*real + imag*imag) / 2.0;
+                    int nu = log(log_zn / log(2.0)) / log(2.0);
+
+                    int iteration = curiter + 1 - nu;
+                    int colour = iteration % 255;
+                    output[gid] = (colour + (colour*256) + (0*256*256));
+
                     
                     break;
                 }
@@ -68,20 +69,22 @@ def mandelbrot(xMin, xMax, yMin, yMax, width, height, maxIterations):
                    output_opencl, np.uint16(maxIterations))
         
     cl.enqueue_copy(queue, output, output_opencl).wait()
-                   
-    output = np.asfarray(output, dtype = float)
+
+    #output = output.astype(np.int32)
     output = output.reshape((height, width))
+
+    print(output[0][0])
 
     return output.T
 
 
 
-max_iteration = 1000
+max_iteration = 1000000
 
-#x_min = np.float128(-0.74877)
-#x_max = np.float128(-0.74872)
-#y_min = np.float128(0.06505)
-#y_max = np.float128(0.06510)
+#x_min = np.float64(-0.8345930348)
+#x_max = np.float64(-0.834593034712)
+#y_min = np.float64(0.213879124572)
+#y_max = np.float64(0.213879124485)
 
 
 x_min = -2.25
@@ -94,19 +97,14 @@ height = 1000
 
 start = time.time()
 data = mandelbrot(x_min, x_max, y_min, y_max, width, height, max_iteration)
-end = time.time()
-print('Time taken for data: ' + str(end - start))
 
 screen = pygame.display.set_mode((1000, 1000))
 
-
-
-start = time.time()
 pygame.surfarray.blit_array(screen, data)
 pygame.display.flip()
 
 end = time.time()
-print('Time taken for render: ' + str(end - start))
+print('Pixels / Second: ' + str(width*height / (end - start) / 1000000) + 'M')
 
 running = True
 
@@ -132,11 +130,7 @@ while running:
                 y_min = y - frameHeight/4
                 y_max = y + frameHeight/4
             
-                #print()
-                #print(x_min)
-                #print(x_max)
-                #print(y_min)
-                #print(y_max)
+
 
             elif event.button == 5:
                 x_min = x - frameWidth
@@ -152,11 +146,12 @@ while running:
                 
             start = time.time()
             data = mandelbrot(x_min, x_max, y_min, y_max, width, height, max_iteration)
-            end = time.time()
-            print('Time taken for render: ' + str(end - start))
                 
             pygame.surfarray.blit_array(screen, data)
             pygame.display.flip()
+
+            end = time.time()
+            print('Pixels / Second: ' + str(width * height / (end - start) / 1000000) + 'M')
 
 
 
