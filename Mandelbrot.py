@@ -1,28 +1,33 @@
-import time
+import time, math
 import numpy as np
-import math
 import pyopencl as cl
 import pygame
 
-platform = cl.get_platforms()[0]
-device = platform.get_devices()[0]
-ctx = cl.Context([device])
+# Default values for pyopencl
+#platform = cl.get_platforms()[0]
+#device = platform.get_devices()[0]
+#ctx = cl.Context([device])
 
+# Manually enter settings each time
+ctx = cl.create_some_context(interactive=True)
 
-
+# Returns array of pixel rgb values for Mandelbrot set
+# xMin, xMax, yMin and yMax are values for the actual frame of the set, width and height is the size of the image in pixels
+# Higher maxIterations will result in better quality, but will take longer
 def mandelbrot(xMin, xMax, yMin, yMax, width, height, maxIterations):
-    
+
+    # Set up pixel values as array
     r1 = np.linspace(xMin, xMax, width, dtype=np.float64)
     r2 = np.linspace(yMin, yMax, height, dtype=np.float64)
     c = r1 + r2[:,None]*1j
-
     c = np.ravel(c)
 
-
+    # Set up context
     global ctx
     queue = cl.CommandQueue(ctx)
     output = np.empty(c.shape, dtype=np.uint32)
-    
+
+    # Mandelbrot program
     prg = cl.Program(ctx, """
         #pragma OPENCL EXTENSION cl_khr_byte_addressable_store : enable
         __kernel void mandelbrot(__global double2 *q,
@@ -60,17 +65,19 @@ def mandelbrot(xMin, xMax, yMin, yMax, width, height, maxIterations):
             }
         }
         """).build()
-    
+
+    # Set up buffers
     mf = cl.mem_flags
     q_opencl = cl.Buffer(ctx, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=c)
     output_opencl = cl.Buffer(ctx, mf.WRITE_ONLY, output.nbytes)
-    
+
+    # Execute program
     prg.mandelbrot(queue, output.shape, None, q_opencl,
                    output_opencl, np.uint16(maxIterations))
         
     cl.enqueue_copy(queue, output, output_opencl).wait()
 
-    #output = output.astype(np.int32)
+    # Get output
     output = output.reshape((height, width))
 
     print(output[0][0])
