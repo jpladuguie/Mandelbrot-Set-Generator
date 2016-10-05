@@ -1,1 +1,1 @@
-# Mandelbrot
+# Mandelbrot Set Generator
